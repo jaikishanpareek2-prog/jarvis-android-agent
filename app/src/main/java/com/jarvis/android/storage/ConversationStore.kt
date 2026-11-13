@@ -36,4 +36,13 @@ class ConversationStore(context: Context) {
         }
         return items
     }
+
+    fun contextSummary(limit: Int = 5): String {
+        val recent = loadRecent(limit)
+        if (recent.isEmpty()) return ""
+
+        return recent.joinToString(separator = "\n") { message ->
+            "User: ${message.prompt}\nAssistant: ${message.response}"
+        }
+    }
 }

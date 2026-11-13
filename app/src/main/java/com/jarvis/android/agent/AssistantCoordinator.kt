@@ -16,7 +16,14 @@ class AssistantCoordinator(
         val cleanPrompt = prompt.trim()
         if (cleanPrompt.isEmpty()) return "I’m ready when you are."
 
-        val response = actions.executeCommand(cleanPrompt)
+        val memoryContext = history.contextSummary(5)
+        val contextualPrompt = if (memoryContext.isBlank()) {
+            cleanPrompt
+        } else {
+            "$memoryContext\nUser: $cleanPrompt"
+        }
+
+        val response = actions.executeCommand(contextualPrompt)
         history.save(cleanPrompt, response)
         return response
     }
