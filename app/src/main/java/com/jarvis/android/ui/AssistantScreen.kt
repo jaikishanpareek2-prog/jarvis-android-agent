@@ -1,5 +1,9 @@
 package com.jarvis.android.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,22 +37,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.android.R
-import com.jarvis.android.service.VoiceAssistantService
-import com.jarvis.android.ui.theme.JarvisBackground
-import com.jarvis.android.ui.theme.JarvisBlue
-import com.jarvis.android.ui.theme.JarvisDark
-import com.jarvis.android.ui.theme.JarvisPanel
-import com.jarvis.android.ui.theme.JarvisTeal
+import com.jarvis.android.overlay.FloatingCompanionService
 import com.jarvis.android.viewmodel.AssistantViewModel
 
 @Composable
 fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
     val context = LocalContext.current
+    var permissionMessage by remember { mutableStateOf("") }
     val suggestions = listOf(
         "Summarize my day",
         "Find my nearest meeting",
@@ -60,11 +59,7 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        JarvisDark,
-                        JarvisPanel,
-                        JarvisBackground
-                    )
+                    colors = listOf(Color(0xFF07131F), Color(0xFF101A2E), Color(0xFF0B1220))
                 )
             )
             .padding(20.dp)
@@ -84,15 +79,11 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .background(JarvisTeal, CircleShape)
-                )
+                Box(modifier = Modifier.size(12.dp).background(Color(0xFF34D399), CircleShape))
             }
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = JarvisPanel),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF111E33)),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -101,96 +92,61 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.SmartToy,
-                            contentDescription = null,
-                            tint = JarvisBlue,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Text(
-                            text = "System online",
-                            color = Color(0xFFB8D2FF),
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
+                        Icon(Icons.Filled.SmartToy, null, tint = Color(0xFF6EA8FE), modifier = Modifier.size(28.dp))
+                        Text("System online", color = Color(0xFFB8D2FF), fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 8.dp))
                     }
-
                     Text(
-                        text = "Good evening, Sir. Your personal Android AI assistant is ready. " +
-                            "I can help manage your schedule, messages, notes, and device tasks.",
+                        text = "Good evening. Your Android assistant shell is ready. AI and voice providers are not configured yet.",
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp
                     )
-
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         suggestions.forEach { suggestion ->
-                            Button(
-                                onClick = { viewModel.updatePrompt(suggestion) },
-                                shape = RoundedCornerShape(50.dp),
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                Text(text = suggestion)
+                            Button(onClick = { viewModel.updatePrompt(suggestion) }, shape = RoundedCornerShape(50.dp)) {
+                                Text(suggestion)
                             }
                         }
                     }
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        color = Color(0xFF12213A),
-                        shape = RoundedCornerShape(30.dp)
-                    )
-                    .padding(20.dp),
-                contentAlignment = Alignment.Center
+            Button(
+                onClick = {
+                    if (Settings.canDrawOverlays(context)) {
+                        val serviceIntent = Intent(context, FloatingCompanionService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(serviceIntent)
+                        else context.startService(serviceIntent)
+                        permissionMessage = "Floating JARVIS is enabled. Tap the orb for controls; drag it to reposition."
+                    } else {
+                        permissionMessage = "Allow JARVIS to display over other apps. Android will show the system permission screen."
+                        val permissionIntent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(permissionIntent)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
             ) {
-                Button(
-                    onClick = {
-                        val serviceIntent = android.content.Intent(context, VoiceAssistantService::class.java)
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
-                        } else {
-                            context.startService(serviceIntent)
-                        }
-                    },
-                    shape = CircleShape,
-                    modifier = Modifier.size(96.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
+                Text(if (Settings.canDrawOverlays(context)) "Enable Floating JARVIS" else "Grant overlay access")
+            }
+            if (permissionMessage.isNotEmpty()) {
+                Text(permissionMessage, color = Color(0xFFB8D2FF), style = MaterialTheme.typography.bodySmall)
             }
 
             OutlinedTextField(
                 value = viewModel.prompt,
-                onValueChange = { viewModel.updatePrompt(it) },
+                onValueChange = viewModel::updatePrompt,
                 label = { Text(stringResource(id = R.string.prompt_hint)) },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
                 shape = RoundedCornerShape(18.dp)
             )
-
-            Button(
-                onClick = { viewModel.submitPrompt() },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Text(text = "Run AI Assistant")
+            Button(onClick = viewModel::submitPrompt, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Text("Run AI Assistant")
             }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun AssistantScreenPreview() {
-    MaterialTheme {
-        AssistantScreen()
     }
 }
