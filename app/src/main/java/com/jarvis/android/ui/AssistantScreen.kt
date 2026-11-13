@@ -1,9 +1,12 @@
 package com.jarvis.android.ui
 
+import android.Manifest
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +30,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,12 +45,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.android.R
 import com.jarvis.android.overlay.FloatingCompanionService
 import com.jarvis.android.overlay.FloatingOrbSettings
 import com.jarvis.android.overlay.FloatingOrbSettingsStore
+import com.jarvis.android.overlay.OrbVisualState
 import com.jarvis.android.viewmodel.AssistantViewModel
+import com.jarvis.android.voice.VoiceAssistantEngine
 
 @Composable
 fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
@@ -53,9 +61,34 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
     var prompt by remember { mutableStateOf("") }
     var permissionMessage by remember { mutableStateOf("") }
     var showOverlaySettings by remember { mutableStateOf(false) }
-    var settings by remember {
-        mutableStateOf(FloatingOrbSettingsStore.load(context))
+    var currentState by remember { mutableStateOf(OrbVisualState.IDLE) }
+    var settings by remember { mutableStateOf(FloatingOrbSettingsStore.load(context)) }
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            permissionMessage = "Microphone permission granted. You can now use voice activation."
+        } else {
+            permissionMessage = "Microphone permission is required for voice input."
+        }
     }
+
+    val engine = remember(context) {
+        VoiceAssistantEngine(
+            context = context,
+            onResult = { text ->
+                prompt = text
+                permissionMessage = "Heard: $text"
+            },
+            onStateChanged = { state -> currentState = state },
+            onError = { error -> permissionMessage = error }
+        )
+    }
+
+    DisposableEffect(engine) {
+        onDispose { engine.release() }
+    }
+
     val suggestions = listOf(
         "Summarize my day",
         "Find my nearest meeting",
@@ -94,7 +127,14 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
-                        .background(Color(0xFF34D399), CircleShape)
+                        .background(
+                            when (currentState) {
+                                OrbVisualState.LISTENING -> Color(0xFF34D399)
+                                OrbVisualState.ERROR -> Color(0xFFFF7A59)
+                                else -> Color(0xFF6EA8FE)
+                            },
+                            CircleShape
+                        )
                 )
             }
 
@@ -123,7 +163,7 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     }
 
                     Text(
-                        text = "Good evening, Sir. Your Android AI companion is active and ready for voice or text interaction.",
+                        text = "Good evening, Sir. JARVIS is ready for voice, hearing, and text interaction.",
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp
@@ -149,6 +189,10 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             ) {
                 Button(
                     onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            return@Button
+                        }
                         if (Settings.canDrawOverlays(context)) {
                             val serviceIntent = Intent(context, FloatingCompanionService::class.java)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -156,14 +200,14 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                             } else {
                                 context.startService(serviceIntent)
                             }
-                            permissionMessage = "Floating JARVIS is enabled. Tap the orb to open the compact control panel."
+                            permissionMessage = "Floating JARVIS is enabled. Tap the orb to open controls."
                         } else {
                             permissionMessage = "Android requires overlay permission before the floating orb can appear."
-                            val permissionIntent = Intent(
+                            val overlayIntent = Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
+                                android.net.Uri.parse("package:${context.packageName}")
                             )
-                            context.startActivity(permissionIntent)
+                            context.startActivity(overlayIntent)
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -173,11 +217,20 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 }
 
                 Button(
-                    onClick = { showOverlaySettings = !showOverlaySettings },
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            return@Button
+                        }
+                        if (engine.hasPermission()) {
+                            engine.startListening()
+                            permissionMessage = "Listening…"
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Text(text = "Settings")
+                    Text(text = "Listen")
                 }
             }
 
@@ -212,6 +265,14 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 }
             }
 
+            Button(
+                onClick = { showOverlaySettings = !showOverlaySettings },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(text = "Orb Settings")
+            }
+
             if (permissionMessage.isNotEmpty()) {
                 Text(
                     text = permissionMessage,
@@ -230,11 +291,15 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             )
 
             Button(
-                onClick = { /* agent action hook */ },
+                onClick = {
+                    if (prompt.isNotBlank()) {
+                        engine.speak(prompt)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text(text = "Run AI Assistant")
+                Text(text = "Speak Response")
             }
         }
     }
