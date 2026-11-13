@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Jarvis</string>
+    <string name="assistant_title">JARVIS</string>
+    <string name="assistant_subtitle">Your personal Android AI companion</string>
+    <string name="mic_button">Activate</string>
+    <string name="prompt_hint">Ask anything…</string>
+</resources>
