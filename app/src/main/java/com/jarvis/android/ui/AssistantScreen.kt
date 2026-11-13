@@ -24,6 +24,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,12 +43,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.android.R
 import com.jarvis.android.overlay.FloatingCompanionService
+import com.jarvis.android.overlay.FloatingOrbSettings
+import com.jarvis.android.overlay.FloatingOrbSettingsStore
 import com.jarvis.android.viewmodel.AssistantViewModel
 
 @Composable
 fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
     val context = LocalContext.current
+    var prompt by remember { mutableStateOf("") }
     var permissionMessage by remember { mutableStateOf("") }
+    var showOverlaySettings by remember { mutableStateOf(false) }
+    var settings by remember {
+        mutableStateOf(FloatingOrbSettingsStore.load(context))
+    }
     val suggestions = listOf(
         "Summarize my day",
         "Find my nearest meeting",
@@ -59,7 +67,11 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF07131F), Color(0xFF101A2E), Color(0xFF0B1220))
+                    colors = listOf(
+                        Color(0xFF07131F),
+                        Color(0xFF101A2E),
+                        Color(0xFF0B1220)
+                    )
                 )
             )
             .padding(20.dp)
@@ -79,7 +91,11 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
-                Box(modifier = Modifier.size(12.dp).background(Color(0xFF34D399), CircleShape))
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(Color(0xFF34D399), CircleShape)
+                )
             }
 
             Card(
@@ -92,61 +108,146 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.SmartToy, null, tint = Color(0xFF6EA8FE), modifier = Modifier.size(28.dp))
-                        Text("System online", color = Color(0xFFB8D2FF), fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(start = 8.dp))
+                        Icon(
+                            imageVector = Icons.Filled.SmartToy,
+                            contentDescription = null,
+                            tint = Color(0xFF6EA8FE),
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            text = "System online",
+                            color = Color(0xFFB8D2FF),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
+
                     Text(
-                        text = "Good evening. Your Android assistant shell is ready. AI and voice providers are not configured yet.",
+                        text = "Good evening, Sir. Your Android AI companion is active and ready for voice or text interaction.",
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp
                     )
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         suggestions.forEach { suggestion ->
-                            Button(onClick = { viewModel.updatePrompt(suggestion) }, shape = RoundedCornerShape(50.dp)) {
-                                Text(suggestion)
+                            Button(
+                                onClick = { prompt = suggestion },
+                                shape = RoundedCornerShape(50.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                Text(text = suggestion)
                             }
                         }
                     }
                 }
             }
 
-            Button(
-                onClick = {
-                    if (Settings.canDrawOverlays(context)) {
-                        val serviceIntent = Intent(context, FloatingCompanionService::class.java)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(serviceIntent)
-                        else context.startService(serviceIntent)
-                        permissionMessage = "Floating JARVIS is enabled. Tap the orb for controls; drag it to reposition."
-                    } else {
-                        permissionMessage = "Allow JARVIS to display over other apps. Android will show the system permission screen."
-                        val permissionIntent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                        context.startActivity(permissionIntent)
-                    }
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(if (Settings.canDrawOverlays(context)) "Enable Floating JARVIS" else "Grant overlay access")
+                Button(
+                    onClick = {
+                        if (Settings.canDrawOverlays(context)) {
+                            val serviceIntent = Intent(context, FloatingCompanionService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
+                            permissionMessage = "Floating JARVIS is enabled. Tap the orb to open the compact control panel."
+                        } else {
+                            permissionMessage = "Android requires overlay permission before the floating orb can appear."
+                            val permissionIntent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(permissionIntent)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(text = if (Settings.canDrawOverlays(context)) "Enable Floating JARVIS" else "Grant overlay access")
+                }
+
+                Button(
+                    onClick = { showOverlaySettings = !showOverlaySettings },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(text = "Settings")
+                }
             }
+
+            if (showOverlaySettings) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101D31)),
+                    shape = RoundedCornerShape(22.dp)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ToggleRow("Floating orb enabled", settings.enabled) {
+                            settings = settings.copy(enabled = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Background listening", settings.backgroundListening) {
+                            settings = settings.copy(backgroundListening = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Wake word", settings.wakeWordEnabled) {
+                            settings = settings.copy(wakeWordEnabled = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Voice responses", settings.voiceResponses) {
+                            settings = settings.copy(voiceResponses = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        Text(
+                            text = "Orb size: ${settings.sizeDp} dp | Transparency: ${(settings.opacity * 100).toInt()}%",
+                            color = Color(0xFFB8D2FF)
+                        )
+                    }
+                }
+            }
+
             if (permissionMessage.isNotEmpty()) {
-                Text(permissionMessage, color = Color(0xFFB8D2FF), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = permissionMessage,
+                    color = Color(0xFFB8D2FF),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
 
             OutlinedTextField(
-                value = viewModel.prompt,
-                onValueChange = viewModel::updatePrompt,
+                value = prompt,
+                onValueChange = { prompt = it },
                 label = { Text(stringResource(id = R.string.prompt_hint)) },
                 modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
                 shape = RoundedCornerShape(18.dp)
             )
-            Button(onClick = viewModel::submitPrompt, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
-                Text("Run AI Assistant")
+
+            Button(
+                onClick = { /* agent action hook */ },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(text = "Run AI Assistant")
             }
         }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = Color.White)
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }

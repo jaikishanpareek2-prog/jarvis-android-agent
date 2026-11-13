@@ -19,7 +19,6 @@ import android.widget.Toast
 import com.jarvis.android.MainActivity
 import kotlin.math.roundToInt
 
-/** User-started application-overlay companion. It does not access the microphone or screen. */
 class FloatingCompanionService : Service() {
     private lateinit var windowManager: WindowManager
     private var orb: HolographicOrbView? = null
@@ -38,13 +37,20 @@ class FloatingCompanionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        showOrb()
+
+        val settings = FloatingOrbSettingsStore.load(this)
+        if (!settings.enabled) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        showOrb(settings)
         return START_NOT_STICKY
     }
 
-    private fun showOrb() {
+    private fun showOrb(settings: FloatingOrbSettings) {
         if (orb != null) return
-        val size = prefs.getInt(KEY_SIZE, DEFAULT_SIZE).coerceIn(MIN_SIZE, MAX_SIZE).dp()
+        val size = settings.sizeDp.coerceIn(MIN_SIZE, MAX_SIZE).dp()
         val params = WindowManager.LayoutParams(
             size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -55,9 +61,10 @@ class FloatingCompanionService : Service() {
             x = prefs.getInt(KEY_X, 24.dp())
             y = prefs.getInt(KEY_Y, 140.dp())
         }
+
         val orbView = HolographicOrbView(
             this,
-            prefs.getFloat(KEY_OPACITY, DEFAULT_OPACITY),
+            settings.opacity.coerceIn(0.2f, 1f),
             onTap = { showPanel() },
             onLongPress = { showPanel() }
         )
@@ -84,6 +91,7 @@ class FloatingCompanionService : Service() {
             removePanel()
             return
         }
+
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20.dp(), 18.dp(), 20.dp(), 18.dp())
@@ -94,19 +102,22 @@ class FloatingCompanionService : Service() {
             }
             elevation = 16.dp().toFloat()
         }
+
         container.addView(TextView(this).apply {
             text = "J A R V I S  ·  COMPANION"
             textSize = 14f
             setTextColor(0xFF9CEFFF.toInt())
         }, matchWrap())
+
         container.addView(TextView(this).apply {
-            text = "Floating controls are active. AI chat, wake word, and screen awareness are not configured yet."
+            text = "Adaptive holographic assistant. Voice and AI integrations are gated by user approval and Android permissions."
             textSize = 13f
             setTextColor(0xFFE0F4FF.toInt())
             setPadding(0, 10.dp(), 0, 12.dp())
         }, matchWrap())
+
         addPanelButton(container, "Battery status") {
-            val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val battery = registerReceiver(null, Intent(Intent.ACTION_BATTERY_CHANGED))
             val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
             val status = battery?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
@@ -115,12 +126,15 @@ class FloatingCompanionService : Service() {
                 status == android.os.BatteryManager.BATTERY_STATUS_FULL
             Toast.makeText(this, "Battery: ${percent?.let { "$it%" } ?: "unavailable"}${if (charging) " · charging" else ""}", Toast.LENGTH_LONG).show()
         }
-        addPanelButton(container, "Open Wi-Fi settings") {
+
+        addPanelButton(container, "Open Wi‑Fi settings") {
             startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
+
         addPanelButton(container, "Open JARVIS app") {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
+
         addPanelButton(container, "Minimize panel") { removePanel() }
         addPanelButton(container, "Disable floating orb") { stopSelf() }
 
@@ -135,6 +149,7 @@ class FloatingCompanionService : Service() {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = statusBarHeight() + 24.dp()
         }
+
         panel = container
         runCatching { windowManager.addView(container, panelParams) }
             .onFailure { panel = null }
@@ -182,7 +197,7 @@ class FloatingCompanionService : Service() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         val params = orbParams ?: return
-        val size = prefs.getInt(KEY_SIZE, DEFAULT_SIZE).dp()
+        val size = FloatingOrbSettingsStore.load(this).sizeDp.coerceIn(MIN_SIZE, MAX_SIZE).dp()
         clampPosition(params, size)
         orb?.let { runCatching { windowManager.updateViewLayout(it, params) } }
     }
@@ -198,7 +213,7 @@ class FloatingCompanionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        const val PREFS_NAME = "floating_companion"
+        const val PREFS_NAME = "jarvis_floating_orb_settings"
         const val KEY_X = "orb_x"
         const val KEY_Y = "orb_y"
         const val KEY_SIZE = "orb_size_dp"
