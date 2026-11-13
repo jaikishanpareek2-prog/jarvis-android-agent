@@ -13,6 +13,7 @@ import com.jarvis.android.voice.WakeWordListener
 
 class VoiceAssistantService : Service() {
     private var wakeWordListener: WakeWordListener? = null
+    private val wakeIntentAction = "com.jarvis.android.WAKE_ACTIVATED"
 
     override fun onCreate() {
         super.onCreate()
@@ -40,8 +41,10 @@ class VoiceAssistantService : Service() {
         wakeWordListener = WakeWordListener(
             context = this,
             onWake = {
-                // The listener is intentionally lightweight and callback-safe; the app can
-                // later connect this into an explicit activation flow or speech recognizer.
+                sendBroadcast(Intent(wakeIntentAction).apply {
+                    setPackage(packageName)
+                    putExtra("wake_activated", true)
+                })
             },
             onError = { /* no-op for now; keep service safe */ }
         )

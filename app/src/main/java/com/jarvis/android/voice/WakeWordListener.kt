@@ -18,21 +18,26 @@ class WakeWordListener(
     private var recorder: AudioRecord? = null
     private var running = false
     private val handler = Handler(Looper.getMainLooper())
-    private var sampleRate = 16000
-    private var channelConfig = AudioFormat.CHANNEL_IN_MONO
-    private var audioFormat = AudioFormat.ENCODING_PCM_16BIT
-    private val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+    private var lastTriggerAt = 0L
+    private val minRmsDb = 20.0
+    private val cooldownMs = 3000L
 
     fun start() {
         if (running) return
-        val minBuffer = bufferSize.coerceAtLeast(2 * 16000)
+
         try {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+                .coerceAtLeast(2048)
+
             recorder = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
                 channelConfig,
                 audioFormat,
-                minBuffer
+                bufferSize
             )
 
             if (recorder?.state != AudioRecord.STATE_INITIALIZED) {
@@ -52,22 +57,39 @@ class WakeWordListener(
 
     fun stop() {
         running = false
-        recorder?.stop()
-        recorder?.release()
+        recorder?.let {
+            try { it.stop() } catch (_: IllegalStateException) {}
+            it.release()
+        }
         recorder = null
     }
 
     private fun readLoop() {
         if (!running) return
-        val buffer = ShortArray(bufferSize.coerceAtLeast(2048) / 2)
+
+        val bufferSize = recorder?.bufferSizeInFrames ?: 0
+        if (bufferSize <= 0) {
+            running = false
+            onError("Wake-word listener has no usable buffer.")
+            return
+        }
+
+        val buffer = ShortArray((bufferSize / 2).coerceAtLeast(1024))
         val read = recorder?.read(buffer, 0, buffer.size) ?: 0
+
         if (read > 0) {
-            val rms = buffer.fold(0.0) { acc, sample -> acc + sample.toDouble().pow(2.0) } / read
-            val level = if (rms > 0.0) 20.0 * log10(sqrt(rms)) else 0.0
-            if (level > 20.0) {
-                handler.post { onWake() }
+            val rms = buffer.copyOf(read).fold(0.0) { acc, sample ->
+                acc + sample.toDouble().pow(2.0)
+            } / read
+            val db = if (rms > 0.0) 20.0 * log10(sqrt(rms)) else 0.0
+
+            val now = System.currentTimeMillis()
+            if (db > minRmsDb && now - lastTriggerAt > cooldownMs) {
+                lastTriggerAt = now
+                handler.post(onWake)
             }
         }
-        if (running) handler.post { readLoop() }
+
+        handler.postDelayed({ readLoop() }, 50L)
     }
 }
