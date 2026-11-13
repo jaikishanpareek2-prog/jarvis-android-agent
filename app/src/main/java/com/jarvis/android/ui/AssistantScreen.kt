@@ -1,7 +1,15 @@
 package com.jarvis.android.ui
 
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,8 +30,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,16 +47,75 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.android.R
-import com.jarvis.android.service.VoiceAssistantService
+import com.jarvis.android.overlay.FloatingCompanionService
+import com.jarvis.android.overlay.FloatingOrbSettingsStore
+import com.jarvis.android.overlay.OrbVisualState
 import com.jarvis.android.viewmodel.AssistantViewModel
+import com.jarvis.android.voice.VoiceAssistantEngine
 
 @Composable
 fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
     val context = LocalContext.current
+    var prompt by remember { mutableStateOf("") }
+    var permissionMessage by remember { mutableStateOf("") }
+    var showOverlaySettings by remember { mutableStateOf(false) }
+    var currentState by remember { mutableStateOf(OrbVisualState.IDLE) }
+    var settings by remember { mutableStateOf(FloatingOrbSettingsStore.load(context)) }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            permissionMessage = "Microphone permission granted. You can now use voice activation."
+        } else {
+            permissionMessage = "Microphone permission is required for voice input."
+        }
+    }
+
+    val wakeReceiver = remember {
+        object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                if (intent?.action != "com.jarvis.android.WAKE_ACTIVATED") return
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    permissionMessage = "Wake trigger detected, but microphone permission is not granted."
+                    return
+                }
+                currentState = OrbVisualState.LISTENING
+                permissionMessage = "Wake trigger received. Listening…"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // The wake signal should turn on the active listen flow; keep it behind permission gates.
+                }
+            }
+        }
+    }
+
+    val engine = remember(context) {
+        VoiceAssistantEngine(
+            context = context,
+            onResult = { text ->
+                prompt = text
+                permissionMessage = "Heard: $text"
+            },
+            onStateChanged = { state -> currentState = state },
+            onError = { error -> permissionMessage = error }
+        )
+    }
+
+    DisposableEffect(wakeReceiver) {
+        val filter = IntentFilter("com.jarvis.android.WAKE_ACTIVATED")
+        context.registerReceiver(wakeReceiver, filter)
+        onDispose { context.unregisterReceiver(wakeReceiver) }
+    }
+
+    DisposableEffect(engine) {
+        onDispose { engine.release() }
+    }
+
     val suggestions = listOf(
-        "What is my battery status?",
+        "Battery status",
         "Open Wi‑Fi settings",
         "Tell me about JARVIS"
     )
@@ -83,7 +152,14 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
-                        .background(Color(0xFF34D399), CircleShape)
+                        .background(
+                            when (currentState) {
+                                OrbVisualState.LISTENING -> Color(0xFF34D399)
+                                OrbVisualState.ERROR -> Color(0xFFFF7A59)
+                                else -> Color(0xFF6EA8FE)
+                            },
+                            CircleShape
+                        )
                 )
             }
 
@@ -112,7 +188,7 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     }
 
                     Text(
-                        text = viewModel.response,
+                        text = viewModel.assistantResponse,
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp
@@ -123,47 +199,114 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 suggestions.forEach { suggestion ->
                     Button(
-                        onClick = { viewModel.updatePrompt(suggestion) },
-                        shape = RoundedCornerShape(50.dp)
+                        onClick = { prompt = suggestion },
+                        shape = RoundedCornerShape(50.dp),
+                        modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Text(text = suggestion)
                     }
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        color = Color(0xFF12213A),
-                        shape = RoundedCornerShape(30.dp)
-                    )
-                    .padding(20.dp),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
                     onClick = {
-                        val serviceIntent = Intent(context, VoiceAssistantService::class.java)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            return@Button
+                        }
+                        if (Settings.canDrawOverlays(context)) {
+                            val serviceIntent = Intent(context, FloatingCompanionService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
+                            permissionMessage = "Wake listener is running. Speak to trigger activation."
                         } else {
-                            context.startService(serviceIntent)
+                            permissionMessage = "Grant overlay permission to show the floating orb."
+                            val overlayIntent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(overlayIntent)
                         }
                     },
-                    shape = CircleShape,
-                    modifier = Modifier.size(96.dp)
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp)
-                    )
+                    Text(text = if (Settings.canDrawOverlays(context)) "Enable wake mode" else "Grant overlay access")
+                }
+
+                Button(
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            return@Button
+                        }
+                        engine.startListening()
+                        permissionMessage = "Listening…"
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(text = "Listen")
                 }
             }
 
+            if (showOverlaySettings) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101D31)),
+                    shape = RoundedCornerShape(22.dp)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ToggleRow("Floating orb enabled", settings.enabled) {
+                            settings = settings.copy(enabled = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Background listening", settings.backgroundListening) {
+                            settings = settings.copy(backgroundListening = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Wake word", settings.wakeWordEnabled) {
+                            settings = settings.copy(wakeWordEnabled = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        ToggleRow("Voice responses", settings.voiceResponses) {
+                            settings = settings.copy(voiceResponses = it)
+                            FloatingOrbSettingsStore.save(context, settings)
+                        }
+                        Text(
+                            text = "Orb size: ${settings.sizeDp} dp | Transparency: ${(settings.opacity * 100).toInt()}%",
+                            color = Color(0xFFB8D2FF)
+                        )
+                    }
+                }
+            }
+
+            Button(
+                onClick = { showOverlaySettings = !showOverlaySettings },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(text = "Orb Settings")
+            }
+
+            if (permissionMessage.isNotEmpty()) {
+                Text(
+                    text = permissionMessage,
+                    color = Color(0xFFB8D2FF),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
             OutlinedTextField(
-                value = viewModel.prompt,
-                onValueChange = viewModel::updatePrompt,
+                value = prompt,
+                onValueChange = { prompt = it },
                 label = { Text(stringResource(id = R.string.prompt_hint)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
@@ -171,12 +314,31 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
             )
 
             Button(
-                onClick = { viewModel.submitPrompt() },
+                onClick = {
+                    val input = prompt.trim()
+                    if (input.isNotBlank()) {
+                        viewModel.updatePrompt(input)
+                        viewModel.submitPrompt()
+                        permissionMessage = viewModel.assistantResponse
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text(text = "Run AI Assistant")
+                Text(text = "Run assistant")
             }
         }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = Color.White)
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
