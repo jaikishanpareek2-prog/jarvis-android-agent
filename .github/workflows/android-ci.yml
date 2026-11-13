@@ -32,6 +32,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ""
 
       - name: Install Android platform 34 and build tools 34.0.0
         run: |
