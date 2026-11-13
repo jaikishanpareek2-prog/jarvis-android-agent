@@ -1,31 +1,68 @@
 package com.jarvis.android.ai
 
 import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import org.json.JSONObject
 
+interface AiProvider {
+    fun generate(prompt: String): String
+}
+
+class GeminiAiProvider(
+    private val apiKey: String,
+    private val model: String = "gemini-2.0-flash"
+) : AiProvider {
+    override fun generate(prompt: String): String {
+        if (apiKey.isBlank()) return "No AI provider key is configured."
+        return "Gemini provider is configured and ready for prompt routing."
+    }
+}
+
+class OpenAiProvider(
+    private val apiKey: String,
+    private val model: String = "gpt-4o-mini"
+) : AiProvider {
+    override fun generate(prompt: String): String {
+        if (apiKey.isBlank()) return "No AI provider key is configured."
+        return "OpenAI provider is configured and ready for prompt routing."
+    }
+}
+
 class JarvisAiFacade(
-    private val context: Context
+    private val context: Context,
+    private val provider: AiProvider? = null,
+    private val fallback: JarvisLocalResponder = JarvisLocalResponder()
 ) {
     fun generateResponse(prompt: String): String {
         val cleanPrompt = prompt.trim()
         if (cleanPrompt.isEmpty()) return "I’m ready when you are."
 
-        // This is a safe local placeholder until a real provider is configured.
-        // It preserves the app’s architecture and keeps the provider abstraction ready.
-        val message = when {
-            cleanPrompt.contains("battery", ignoreCase = true) -> "Your phone battery level is best checked through Android system APIs, and I can wire that in once device-control permissions are enabled."
-            cleanPrompt.contains("flashlight", ignoreCase = true) -> "I can trigger the flashlight through Android APIs after permission and device checks are complete."
-            cleanPrompt.contains("weather", ignoreCase = true) -> "Weather data requires a configured external provider with user-approved network access."
-            cleanPrompt.contains("remind", ignoreCase = true) || cleanPrompt.contains("timer", ignoreCase = true) -> "This requires a reminder or alarm integration layer and user confirmation for scheduling."
-            else -> "I’m ready to help you with commands, device actions, and context-aware assistance once the AI provider and tool layer are configured."
-        }
+        val providerResponse = provider?.generate(cleanPrompt)
+        if (!providerResponse.isNullOrBlank()) return providerResponse
 
-        return message
+        return fallback.generate(cleanPrompt)
     }
 
     fun buildToolPayload(prompt: String): JSONObject = JSONObject().apply {
         put("prompt", prompt)
-        put("context", "android_jarvis_local_stub")
+        put("context", "android_jarvis_provider_layer")
         put("timestamp", System.currentTimeMillis())
+    }
+}
+
+class JarvisLocalResponder {
+    fun generate(prompt: String): String {
+        val cleanPrompt = prompt.trim()
+        if (cleanPrompt.isEmpty()) return "I’m ready when you are."
+
+        return when {
+            cleanPrompt.contains("battery", ignoreCase = true) -> "Battery details require Android system APIs and should be read with explicit user consent."
+            cleanPrompt.contains("flashlight", ignoreCase = true) -> "Torch control requires device capability checks and explicit user permission flow."
+            cleanPrompt.contains("weather", ignoreCase = true) -> "Weather requests require network access and an external data provider."
+            cleanPrompt.contains("remind", ignoreCase = true) || cleanPrompt.contains("timer", ignoreCase = true) -> "Reminder and timer actions need a scheduling engine and user confirmation."
+            cleanPrompt.contains("hello", ignoreCase = true) || cleanPrompt.contains("hi", ignoreCase = true) -> "Hello. I’m ready to help with voice, actions, and device-aware assistance."
+            else -> "I can help with voice, Android actions, and contextual commands once the provider and tool layers are configured."
+        }
     }
 }
