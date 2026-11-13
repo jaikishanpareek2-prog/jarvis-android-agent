@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
-import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -22,9 +21,10 @@ import kotlin.math.roundToInt
 class FloatingCompanionService : Service() {
     private lateinit var windowManager: WindowManager
     private var orb: HolographicOrbView? = null
-    private var panel: View? = null
+    private var panel: LinearLayout? = null
     private var orbParams: WindowManager.LayoutParams? = null
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    private var currentState = OrbVisualState.IDLE
 
     override fun onCreate() {
         super.onCreate()
@@ -48,6 +48,11 @@ class FloatingCompanionService : Service() {
         return START_NOT_STICKY
     }
 
+    fun updateOrbState(state: OrbVisualState) {
+        currentState = state
+        orb?.updateState(state)
+    }
+
     private fun showOrb(settings: FloatingOrbSettings) {
         if (orb != null) return
         val size = settings.sizeDp.coerceIn(MIN_SIZE, MAX_SIZE).dp()
@@ -65,15 +70,18 @@ class FloatingCompanionService : Service() {
         val orbView = HolographicOrbView(
             this,
             settings.opacity.coerceIn(0.2f, 1f),
+            currentState,
             onTap = { showPanel() },
             onLongPress = { showPanel() }
         )
+
         orbView.tag = { dx: Float, dy: Float ->
             params.x += dx.roundToInt()
             params.y += dy.roundToInt()
             clampPosition(params, size)
             runCatching { windowManager.updateViewLayout(orbView, params) }
         }
+
         orb = orbView
         orbParams = params
         runCatching {
@@ -110,12 +118,18 @@ class FloatingCompanionService : Service() {
         }, matchWrap())
 
         container.addView(TextView(this).apply {
-            text = "Adaptive holographic assistant. Voice and AI integrations are gated by user approval and Android permissions."
+            text = "Adaptive holographic assistant. Voice and AI features remain behind Android permission gates and user consent."
             textSize = 13f
             setTextColor(0xFFE0F4FF.toInt())
-            setPadding(0, 10.dp(), 0, 12.dp())
+            setPadding(0, 10.dp(), 0, 10.dp())
         }, matchWrap())
 
+        addPanelButton(container, "Idle") { updateOrbState(OrbVisualState.IDLE) }
+        addPanelButton(container, "Listening") { updateOrbState(OrbVisualState.LISTENING) }
+        addPanelButton(container, "Thinking") { updateOrbState(OrbVisualState.THINKING) }
+        addPanelButton(container, "Speaking") { updateOrbState(OrbVisualState.SPEAKING) }
+        addPanelButton(container, "Success") { updateOrbState(OrbVisualState.SUCCESS) }
+        addPanelButton(container, "Error") { updateOrbState(OrbVisualState.ERROR) }
         addPanelButton(container, "Battery status") {
             val battery = registerReceiver(null, Intent(Intent.ACTION_BATTERY_CHANGED))
             val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -126,17 +140,14 @@ class FloatingCompanionService : Service() {
                 status == android.os.BatteryManager.BATTERY_STATUS_FULL
             Toast.makeText(this, "Battery: ${percent?.let { "$it%" } ?: "unavailable"}${if (charging) " · charging" else ""}", Toast.LENGTH_LONG).show()
         }
-
         addPanelButton(container, "Open Wi‑Fi settings") {
             startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-
         addPanelButton(container, "Open JARVIS app") {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
-
         addPanelButton(container, "Minimize panel") { removePanel() }
-        addPanelButton(container, "Disable floating orb") { stopSelf() }
+        addPanelButton(container, "Disable orb") { stopSelf() }
 
         val display = resources.displayMetrics
         val panelParams = WindowManager.LayoutParams(
