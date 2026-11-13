@@ -2,9 +2,7 @@ package com.jarvis.android.device
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
-import androidx.core.content.ContextCompat
 import com.jarvis.android.ai.JarvisAiFacade
 
 class DeviceActionController(
@@ -16,44 +14,46 @@ class DeviceActionController(
         if (normalized.isEmpty()) return "I’m ready when you are."
 
         return when {
+            normalized.contains("wifi", ignoreCase = true) -> openSettings(
+                Settings.ACTION_WIFI_SETTINGS, "I’ve opened Wi-Fi settings. Android requires you to make the change there."
+            )
+            normalized.contains("bluetooth", ignoreCase = true) -> openSettings(
+                Settings.ACTION_BLUETOOTH_SETTINGS, "I’ve opened Bluetooth settings. Android requires you to make the change there."
+            )
+            normalized.contains("volume", ignoreCase = true) -> openSettings(
+                Settings.ACTION_SOUND_SETTINGS, "I’ve opened sound settings so you can adjust the volume."
+            )
             normalized.contains("flashlight", ignoreCase = true) -> {
-                val hasCamera = context.packageManager.hasSystemFeature("android.hardware.camera.flash")
-                if (!hasCamera) "This device does not expose a flash/torch capability."
-                else {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                    }
-                    context.startActivity(intent)
-                    "I’m opening the relevant system settings so the torch can be managed safely and explicitly."
+                if (!context.packageManager.hasSystemFeature("android.hardware.camera.flash")) {
+                    "This device does not report a camera flash."
+                } else {
+                    "Direct torch control is not wired up yet. I have not changed the flashlight."
                 }
             }
-            normalized.contains("wifi", ignoreCase = true) -> {
-                context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                "I’ve opened the Wi‑Fi settings screen for you."
-            }
-            normalized.contains("bluetooth", ignoreCase = true) -> {
-                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                "I’ve opened the Bluetooth settings screen for you."
-            }
-            normalized.contains("battery", ignoreCase = true) -> {
-                val batteryIntent = Intent(Intent.ACTION_BATTERY_CHANGED)
-                val battery = context.registerReceiver(null, batteryIntent)
-                val level = battery?.getIntExtra("level", -1) ?: -1
-                val scale = battery?.getIntExtra("scale", 100) ?: 100
-                val percent = if (level >= 0 && scale > 0) (level * 100 / scale) else null
-                val charging = battery?.getIntExtra("status", -1) == 2 || battery?.getIntExtra("status", -1) == 5
-                if (percent == null) "Battery information isn’t available on this device right now."
-                else "Battery is at ${percent}%${if (charging) " and charging" else ""}."
-            }
-            normalized.contains("volume", ignoreCase = true) -> {
-                context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                "I’ve opened the sound settings so you can adjust volume safely."
-            }
-            normalized.contains("settings", ignoreCase = true) -> {
-                context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                "I’ve opened the system settings screen."
-            }
+            normalized.contains("battery", ignoreCase = true) -> batteryStatus()
+            normalized.contains("settings", ignoreCase = true) -> openSettings(
+                Settings.ACTION_SETTINGS, "I’ve opened system settings."
+            )
             else -> aiFacade.generateResponse(normalized)
         }
+    }
+
+    private fun openSettings(action: String, successMessage: String): String = try {
+        context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        successMessage
+    } catch (_: Exception) {
+        "Android could not open that settings screen on this device."
+    }
+
+    private fun batteryStatus(): String {
+        val battery = context.registerReceiver(null, Intent(Intent.ACTION_BATTERY_CHANGED))
+            ?: return "Battery information is unavailable right now."
+        val level = battery.getIntExtra("level", -1)
+        val scale = battery.getIntExtra("scale", -1)
+        if (level < 0 || scale <= 0) return "Battery information is unavailable right now."
+        val status = battery.getIntExtra("status", -1)
+        val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == android.os.BatteryManager.BATTERY_STATUS_FULL
+        return "Battery is at ${level * 100 / scale}%${if (charging) " and charging" else ""}."
     }
 }
