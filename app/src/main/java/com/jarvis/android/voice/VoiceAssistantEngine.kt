@@ -1,16 +1,14 @@
 package com.jarvis.android.voice
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Bundle
-import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.util.Log
+import android.os.Bundle
 import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
 import com.jarvis.android.overlay.OrbVisualState
 
 class VoiceAssistantEngine(
@@ -23,16 +21,17 @@ class VoiceAssistantEngine(
     private val recognizer: SpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
     private val tts: TextToSpeech = TextToSpeech(context, this)
     private var isListening = false
+    private var isReady = false
 
     init {
-        recognizer.setRecognitionListener(object : RecognitionListener {
+        recognizer.setRecognitionListener(object : android.speech.RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 isListening = true
                 onStateChanged(OrbVisualState.LISTENING)
             }
 
             override fun onBeginningOfSpeech() = Unit
-            override fun onPartialResults(partialResults: Bundle?) = Unit
+            override fun onRmsChanged(rmsdB: Float) = Unit
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() {
                 isListening = false
@@ -56,16 +55,18 @@ class VoiceAssistantEngine(
             }
 
             override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val text = matches?.firstOrNull()?.orEmpty() ?: ""
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.trim()
+                    .orEmpty()
                 if (text.isNotBlank()) {
                     onResult(text)
                     onStateChanged(OrbVisualState.SUCCESS)
                 }
             }
 
+            override fun onPartialResults(partialResults: Bundle?) = Unit
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
-            override fun onRmsChanged(rmsdB: Float) = Unit
         })
     }
 
@@ -79,16 +80,13 @@ class VoiceAssistantEngine(
             onError("Microphone permission is required to listen.")
             return
         }
-
         if (isListening) return
-
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
         }
-
         recognizer.startListening(intent)
     }
 
@@ -101,12 +99,15 @@ class VoiceAssistantEngine(
 
     fun speak(text: String) {
         if (text.isBlank()) return
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis_response")
-        onStateChanged(OrbVisualState.SPEAKING)
+        if (isReady) {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis_response")
+            onStateChanged(OrbVisualState.SPEAKING)
+        }
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
+        isReady = status == TextToSpeech.SUCCESS
+        if (isReady) {
             onStateChanged(OrbVisualState.IDLE)
         } else {
             onError("Text-to-speech is unavailable on this device.")
