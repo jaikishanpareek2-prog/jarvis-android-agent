@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,12 +16,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -85,9 +88,6 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 }
                 currentState = OrbVisualState.LISTENING
                 permissionMessage = "Wake trigger received. Listening…"
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // The wake signal should turn on the active listen flow; keep it behind permission gates.
-                }
             }
         }
     }
@@ -106,7 +106,8 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
 
     DisposableEffect(wakeReceiver) {
         val filter = IntentFilter("com.jarvis.android.WAKE_ACTIVATED")
-        context.registerReceiver(wakeReceiver, filter)
+        // Android 14 (targetSdk 34) crashes if a receiver is registered without an export flag.
+        ContextCompat.registerReceiver(context, wakeReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         onDispose { context.unregisterReceiver(wakeReceiver) }
     }
 
@@ -132,10 +133,14 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                     )
                 )
             )
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(20.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
@@ -196,7 +201,10 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 suggestions.forEach { suggestion ->
                     Button(
                         onClick = { prompt = suggestion },
@@ -219,13 +227,10 @@ fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
                             return@Button
                         }
                         if (Settings.canDrawOverlays(context)) {
-                            val serviceIntent = Intent(context, FloatingCompanionService::class.java)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                context.startForegroundService(serviceIntent)
-                            } else {
-                                context.startService(serviceIntent)
-                            }
-                            permissionMessage = "Wake listener is running. Speak to trigger activation."
+                            // The orb service never calls startForeground(), so it must be started with
+                            // startService(); startForegroundService() would crash it after 5 seconds.
+                            context.startService(Intent(context, FloatingCompanionService::class.java))
+                            permissionMessage = "Floating orb started."
                         } else {
                             permissionMessage = "Grant overlay permission to show the floating orb."
                             val overlayIntent = Intent(

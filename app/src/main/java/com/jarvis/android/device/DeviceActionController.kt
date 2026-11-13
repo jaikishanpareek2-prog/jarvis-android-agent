@@ -2,6 +2,7 @@ package com.jarvis.android.device
 
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.provider.Settings
 import com.jarvis.android.ai.JarvisAiFacade
 
@@ -9,8 +10,14 @@ class DeviceActionController(
     private val context: Context,
     private val aiFacade: JarvisAiFacade
 ) {
-    fun executeCommand(command: String): String {
-        val normalized = command.trim()
+    /**
+     * [command] is what the user just said or typed and is the only text used to pick a device action.
+     * [aiPrompt] may also carry recent conversation history and is used only for the AI fallback,
+     * so words from earlier messages never trigger device actions again.
+     */
+    fun executeCommand(command: String, aiPrompt: String = command): String {
+        // Drop hyphens (including the non-breaking one) so "Wi-Fi" and "Wi‑Fi" match "wifi".
+        val normalized = command.trim().replace(Regex("[-\\u2010-\\u2015]"), "")
         if (normalized.isEmpty()) return "I’m ready when you are."
 
         return when {
@@ -33,7 +40,7 @@ class DeviceActionController(
                 "I opened system settings."
             )
             normalized.contains("open app", ignoreCase = true) || normalized.contains("launch", ignoreCase = true) -> launchAppAction(normalized)
-            else -> aiFacade.generateResponse(normalized)
+            else -> aiFacade.generateResponse(aiPrompt)
         }
     }
 
@@ -74,7 +81,7 @@ class DeviceActionController(
     }
 
     private fun batteryStatus(): String {
-        val battery = context.registerReceiver(null, Intent(Intent.ACTION_BATTERY_CHANGED))
+        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             ?: return "Battery information is unavailable right now."
         val level = battery.getIntExtra("level", -1)
         val scale = battery.getIntExtra("scale", -1)

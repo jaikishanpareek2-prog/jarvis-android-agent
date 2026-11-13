@@ -3,10 +3,10 @@ package com.jarvis.android.overlay
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
@@ -131,7 +131,7 @@ class FloatingCompanionService : Service() {
         addPanelButton(container, "Success") { updateOrbState(OrbVisualState.SUCCESS) }
         addPanelButton(container, "Error") { updateOrbState(OrbVisualState.ERROR) }
         addPanelButton(container, "Battery status") {
-            val battery = registerReceiver(null, Intent(Intent.ACTION_BATTERY_CHANGED))
+            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val level = battery?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = battery?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100) ?: 100
             val status = battery?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)

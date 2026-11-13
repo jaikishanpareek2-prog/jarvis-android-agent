@@ -39,6 +39,8 @@ class VoiceAssistantEngine(
             }
 
             override fun onError(error: Int) {
+                // Timeouts and no-match errors can arrive without onEndOfSpeech, so always reset here.
+                isListening = false
                 val message = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                     SpeechRecognizer.ERROR_CLIENT -> "Speech recognizer unavailable"
@@ -50,11 +52,13 @@ class VoiceAssistantEngine(
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
                     else -> "Speech recognition error"
                 }
-                onError(message)
+                // Qualified so this calls the constructor callback (String), not this listener's onError(Int).
+                this@VoiceAssistantEngine.onError(message)
                 onStateChanged(OrbVisualState.ERROR)
             }
 
             override fun onResults(results: Bundle?) {
+                isListening = false
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     ?.trim()
@@ -62,6 +66,8 @@ class VoiceAssistantEngine(
                 if (text.isNotBlank()) {
                     onResult(text)
                     onStateChanged(OrbVisualState.SUCCESS)
+                } else {
+                    onStateChanged(OrbVisualState.IDLE)
                 }
             }
 
@@ -81,6 +87,10 @@ class VoiceAssistantEngine(
             return
         }
         if (isListening) return
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            onError("Speech recognition is not available on this device.")
+            return
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)

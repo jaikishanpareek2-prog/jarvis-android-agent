@@ -28,7 +28,7 @@ class AssistantWorkflow(
             "$memory\nUser: $prompt"
         }
 
-        val response = actions.executeCommand(workflowPrompt)
+        val response = actions.executeCommand(command = prompt, aiPrompt = workflowPrompt)
         history.save(prompt, response)
         return WorkflowResult(response = response, shouldSpeak = true)
     }
