@@ -7,20 +7,23 @@ A starter Android application for a Jarvis-style personal AI assistant.
 - Android app shell with Jetpack Compose UI
 - Foreground voice assistant service scaffold
 - Dark futuristic "Jarvis" interface
-- Ready for adding LLM, memory, permissions, and automation integrations
+- ViewModel-driven assistant state handling
+- Architecture overview for AI agent orchestration
 
 ## Getting started
 
-1. Open the project in Android Studio.
-2. Let Gradle sync.
-3. Connect an Android device or emulator.
-4. Run the app.
+1. Install Android Studio and Android SDK.
+2. Open this directory as a project.
+3. Let Gradle sync.
+4. Connect a device or emulator.
+5. Click Run to install the app.
 
 ## Project structure
 
 - `app/` — Android app module
-- `ARCHITECTURE.md` — system overview diagram
+- `ARCHITECTURE.md` — Mermaid architecture overview
+- `app/src/main/java/com/jarvis/android/viewmodel/AssistantViewModel.kt` — app state and prompt handling
 
-## Architecture overview
+## Build notes
 
-See `ARCHITECTURE.md` for the Mermaid-based system architecture.
+This project is structured for Android Studio and Gradle. It is intended to be built locally on a machine with the Android SDK installed. The repository is set up as a starter app that is ready for feature expansion into voice, memory, and external AI services.

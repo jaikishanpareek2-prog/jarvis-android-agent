@@ -1,7 +1,5 @@
 package com.jarvis.android.ui
 
-import android.content.Intent
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,15 +33,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jarvis.android.R
 import com.jarvis.android.service.VoiceAssistantService
+import com.jarvis.android.ui.theme.JarvisBackground
+import com.jarvis.android.ui.theme.JarvisBlue
+import com.jarvis.android.ui.theme.JarvisDark
+import com.jarvis.android.ui.theme.JarvisPanel
+import com.jarvis.android.ui.theme.JarvisTeal
+import com.jarvis.android.viewmodel.AssistantViewModel
 
 @Composable
-fun AssistantScreen() {
+fun AssistantScreen(viewModel: AssistantViewModel = viewModel()) {
     val context = LocalContext.current
-    var prompt by remember { mutableStateOf("") }
     val suggestions = listOf(
         "Summarize my day",
         "Find my nearest meeting",
@@ -56,9 +61,9 @@ fun AssistantScreen() {
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF07131F),
-                        Color(0xFF101A2E),
-                        Color(0xFF0B1220)
+                        JarvisDark,
+                        JarvisPanel,
+                        JarvisBackground
                     )
                 )
             )
@@ -82,12 +87,12 @@ fun AssistantScreen() {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
-                        .background(Color(0xFF34D399), CircleShape)
+                        .background(JarvisTeal, CircleShape)
                 )
             }
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF111E33)),
+                colors = CardDefaults.cardColors(containerColor = JarvisPanel),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -99,7 +104,7 @@ fun AssistantScreen() {
                         Icon(
                             imageVector = Icons.Filled.SmartToy,
                             contentDescription = null,
-                            tint = Color(0xFF6EA8FE),
+                            tint = JarvisBlue,
                             modifier = Modifier.size(28.dp)
                         )
                         Text(
@@ -111,8 +116,8 @@ fun AssistantScreen() {
                     }
 
                     Text(
-                        text = "Good evening, Sir. Your personal Android AI assistant is ready."
-                            + " I can help manage your schedule, messages, notes, and device tasks.",
+                        text = "Good evening, Sir. Your personal Android AI assistant is ready. " +
+                            "I can help manage your schedule, messages, notes, and device tasks.",
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp
@@ -121,7 +126,7 @@ fun AssistantScreen() {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         suggestions.forEach { suggestion ->
                             Button(
-                                onClick = { prompt = suggestion },
+                                onClick = { viewModel.updatePrompt(suggestion) },
                                 shape = RoundedCornerShape(50.dp),
                                 modifier = Modifier.padding(top = 4.dp)
                             ) {
@@ -144,8 +149,8 @@ fun AssistantScreen() {
             ) {
                 Button(
                     onClick = {
-                        val serviceIntent = Intent(context, VoiceAssistantService::class.java)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val serviceIntent = android.content.Intent(context, VoiceAssistantService::class.java)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                             context.startForegroundService(serviceIntent)
                         } else {
                             context.startService(serviceIntent)
@@ -163,8 +168,8 @@ fun AssistantScreen() {
             }
 
             OutlinedTextField(
-                value = prompt,
-                onValueChange = { prompt = it },
+                value = viewModel.prompt,
+                onValueChange = { viewModel.updatePrompt(it) },
                 label = { Text(stringResource(id = R.string.prompt_hint)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
@@ -172,12 +177,20 @@ fun AssistantScreen() {
             )
 
             Button(
-                onClick = { /* Agent action hook */ },
+                onClick = { viewModel.submitPrompt() },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Text(text = "Run AI Assistant")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun AssistantScreenPreview() {
+    MaterialTheme {
+        AssistantScreen()
     }
 }
